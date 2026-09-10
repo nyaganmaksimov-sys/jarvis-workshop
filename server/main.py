@@ -19,7 +19,7 @@ from core.hub_source import HubSource
 from core.announcer import AnnouncementQueue
 from core.tts import NeuralTTS
 
-app = FastAPI(title="Jarvis Workshop API", version="0.7.0")
+app = FastAPI(title="Jarvis Workshop API", version="0.8.0")
 jarvis = JarvisCore()
 hub = HubSource()
 announcer = AnnouncementQueue(hub)
@@ -131,7 +131,7 @@ def health():
     return {
         "ok": True,
         "service": "jarvis-workshop",
-        "version": "0.7.0",
+        "version": "0.8.0",
         "hub_configured": hub.configured,
         "tts_profiles": tts.profiles(),
         "device_count": len(DEVICE_STATE),
