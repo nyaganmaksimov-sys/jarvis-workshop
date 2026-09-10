@@ -13,6 +13,9 @@ cameras:
     url: rtsp://user:password@192.168.1.50:554/stream1
     analyze_fps: 1
     heartbeat_seconds: 60
+    reconnect_seconds: 5
+    read_failure_limit: 3
+    offline_event_seconds: 60
     device_id: flashforge-ad5x-01
     vision:
       motion_threshold: 6.0
