@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 
 from fastapi import FastAPI, Header, HTTPException
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,7 +16,7 @@ if str(ROOT) not in sys.path:
 
 from core.orchestrator import JarvisCore
 
-app = FastAPI(title="Jarvis Workshop API", version="0.2.0")
+app = FastAPI(title="Jarvis Workshop API", version="0.3.0")
 jarvis = JarvisCore()
 
 EVENTS = deque(maxlen=2000)
@@ -52,12 +54,17 @@ def workshop_snapshot() -> dict[str, Any]:
     }
 
 
+@app.get("/", include_in_schema=False)
+def root():
+    return RedirectResponse(url="/dashboard/")
+
+
 @app.get("/health")
 def health():
     return {
         "ok": True,
         "service": "jarvis-workshop",
-        "version": "0.2.0",
+        "version": "0.3.0",
         "time": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -92,6 +99,8 @@ def ingest_event(event: Event, authorization: str | None = Header(default=None))
             state["status"] = "DONE"
         elif event.type == "anomaly.detected":
             state["status"] = "ERROR"
+        elif event.type == "vision.state":
+            state["status"] = str(event.data.get("status") or state.get("status") or "UNKNOWN")
 
     return {"ok": True}
 
@@ -124,3 +133,8 @@ def get_workshop_status():
 async def assistant_query(request: AssistantRequest, authorization: str | None = Header(default=None)):
     authorize(authorization)
     return await jarvis.handle(request.text, workshop_snapshot())
+
+
+DASHBOARD_DIR = ROOT / "dashboard"
+if DASHBOARD_DIR.exists():
+    app.mount("/dashboard", StaticFiles(directory=DASHBOARD_DIR, html=True), name="dashboard")
