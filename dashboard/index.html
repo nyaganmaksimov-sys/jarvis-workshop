@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Джарвис · Цех</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <div class="eyebrow">JARVIS WORKSHOP</div>
+        <h1>Джарвис · Цех</h1>
+        <p>Визуальный контроль оборудования и событий производства</p>
+      </div>
+      <div class="top-actions">
+        <span id="apiState" class="pill muted">API: проверка…</span>
+        <button id="refreshBtn">Обновить</button>
+      </div>
+    </header>
+
+    <section class="kpis">
+      <article><span>Оборудование</span><strong id="deviceCount">0</strong></article>
+      <article><span>В работе</span><strong id="printingCount">0</strong></article>
+      <article><span>Тревоги</span><strong id="alertCount">0</strong></article>
+      <article><span>Последнее обновление</span><strong id="updatedAt">—</strong></article>
+    </section>
+
+    <section class="grid">
+      <section class="panel devices-panel">
+        <div class="panel-head">
+          <div><h2>Оборудование</h2><p>Текущее состояние станков и камер</p></div>
+        </div>
+        <div id="devices" class="devices"><div class="empty">Нет данных от оборудования</div></div>
+      </section>
+
+      <aside class="panel jarvis-panel">
+        <div class="panel-head"><div><h2>Спросить Джарвиса</h2><p>Запрос строится по текущему состоянию цеха</p></div></div>
+        <div id="assistantAnswer" class="assistant-answer">Например: «Что сейчас происходит в цехе?»</div>
+        <form id="assistantForm" class="assistant-form">
+          <input id="assistantInput" maxlength="4000" placeholder="Что происходит с AD5X?" autocomplete="off">
+          <button>Спросить</button>
+        </form>
+      </aside>
+    </section>
+
+    <section class="grid lower">
+      <section class="panel camera-panel">
+        <div class="panel-head">
+          <div><h2>LIVE · FlashForge AD5X</h2><p id="cameraCaption">Ожидание видеопотока</p></div>
+          <span id="cameraState" class="pill muted">NO SIGNAL</span>
+        </div>
+        <div class="camera-stage">
+          <div class="camera-placeholder">
+            <div class="scan"></div>
+            <span>LIVE VIEW</span>
+            <small>Для браузера RTSP будет преобразован в MJPEG/HLS на следующем этапе</small>
+          </div>
+        </div>
+      </section>
+
+      <aside class="panel events-panel">
+        <div class="panel-head"><div><h2>События</h2><p>Последние изменения и тревоги</p></div></div>
+        <div id="events" class="events"><div class="empty">Событий пока нет</div></div>
+      </aside>
+    </section>
+  </main>
+  <script src="./app.js"></script>
+</body>
+</html>
