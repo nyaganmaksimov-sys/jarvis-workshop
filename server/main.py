@@ -19,7 +19,7 @@ from core.hub_source import HubSource
 from core.announcer import AnnouncementQueue
 from core.tts import NeuralTTS
 
-app = FastAPI(title="Jarvis Workshop API", version="0.6.0")
+app = FastAPI(title="Jarvis Workshop API", version="0.7.0")
 jarvis = JarvisCore()
 hub = HubSource()
 announcer = AnnouncementQueue(hub)
@@ -28,6 +28,7 @@ tts = NeuralTTS()
 EVENTS = deque(maxlen=2000)
 DEVICE_STATE: dict[str, dict[str, Any]] = {}
 API_KEY = os.getenv("JARVIS_API_KEY", "change-me")
+DEVICE_STALE_SECONDS = max(30, int(os.getenv("JARVIS_DEVICE_STALE_SECONDS", "150")))
 
 
 class Event(BaseModel):
@@ -60,12 +61,53 @@ def authorize(authorization: str | None):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
+def heartbeat_age_seconds(last_seen: str | None, now: datetime) -> float | None:
+    if not last_seen:
+        return None
+    try:
+        parsed = datetime.fromisoformat(last_seen.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return max(0.0, (now - parsed.astimezone(timezone.utc)).total_seconds())
+    except (TypeError, ValueError):
+        return None
+
+
+def device_snapshot(item: dict[str, Any], now: datetime) -> dict[str, Any]:
+    current = dict(item)
+    reported_status = str(current.get("status") or "UNKNOWN").upper()
+    age = heartbeat_age_seconds(current.get("last_seen"), now)
+    stale = age is None or age > DEVICE_STALE_SECONDS
+
+    current["reported_status"] = reported_status
+    current["heartbeat_age_seconds"] = round(age, 1) if age is not None else None
+    current["stale"] = stale
+    current["status"] = "OFFLINE" if stale else reported_status
+    return current
+
+
 def workshop_snapshot() -> dict[str, Any]:
+    now = datetime.now(timezone.utc)
+    devices = [device_snapshot(x, now) for x in DEVICE_STATE.values()]
     alerts = [x for x in EVENTS if x.get("severity") in {"warning", "critical"}][:20]
+    offline = sum(1 for x in devices if x.get("status") == "OFFLINE")
+    printing = sum(1 for x in devices if x.get("status") == "PRINTING")
+    warnings = sum(1 for x in alerts if x.get("severity") == "warning")
+    critical = sum(1 for x in alerts if x.get("severity") == "critical")
+
     return {
-        "devices": list(DEVICE_STATE.values()),
+        "devices": devices,
         "alerts": alerts,
-        "captured_at": datetime.now(timezone.utc).isoformat(),
+        "summary": {
+            "total": len(devices),
+            "online": len(devices) - offline,
+            "offline": offline,
+            "printing": printing,
+            "warning_alerts": warnings,
+            "critical_alerts": critical,
+        },
+        "heartbeat_stale_seconds": DEVICE_STALE_SECONDS,
+        "captured_at": now.isoformat(),
     }
 
 
@@ -89,9 +131,11 @@ def health():
     return {
         "ok": True,
         "service": "jarvis-workshop",
-        "version": "0.6.0",
+        "version": "0.7.0",
         "hub_configured": hub.configured,
         "tts_profiles": tts.profiles(),
+        "device_count": len(DEVICE_STATE),
+        "heartbeat_stale_seconds": DEVICE_STALE_SECONDS,
         "time": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -128,6 +172,10 @@ def ingest_event(event: Event, authorization: str | None = Header(default=None))
             state["status"] = "ERROR"
         elif event.type == "vision.state":
             state["status"] = str(event.data.get("status") or state.get("status") or "UNKNOWN")
+        elif event.type == "device.idle":
+            state["status"] = "IDLE"
+        elif event.type == "device.printing":
+            state["status"] = "PRINTING"
 
     return {"ok": True}
 
@@ -140,7 +188,8 @@ def list_events(limit: int = 100):
 
 @app.get("/api/v1/devices")
 def list_devices():
-    return list(DEVICE_STATE.values())
+    now = datetime.now(timezone.utc)
+    return [device_snapshot(x, now) for x in DEVICE_STATE.values()]
 
 
 @app.get("/api/v1/devices/{device_id}")
@@ -148,7 +197,7 @@ def get_device(device_id: str):
     item = DEVICE_STATE.get(device_id)
     if not item:
         raise HTTPException(status_code=404, detail="Device not found")
-    return item
+    return device_snapshot(item, datetime.now(timezone.utc))
 
 
 @app.get("/api/v1/workshop/status")
