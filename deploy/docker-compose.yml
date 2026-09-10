@@ -1,0 +1,21 @@
+services:
+  jarvis-server:
+    image: python:3.12-slim
+    working_dir: /app
+    volumes:
+      - ../server:/app
+    command: sh -c "pip install --no-cache-dir -r requirements.txt && uvicorn main:app --host 0.0.0.0 --port 8080"
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  edge-agent:
+    image: python:3.12-slim
+    working_dir: /app
+    depends_on:
+      - jarvis-server
+    volumes:
+      - ../edge-agent:/app
+      - ../config:/config
+    command: sh -c "apt-get update && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 && pip install --no-cache-dir -r requirements.txt && python main.py --config /config/devices.yaml"
+    restart: unless-stopped
