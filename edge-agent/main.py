@@ -34,7 +34,7 @@ def safe_post_event(base_url, api_key, payload):
 
 
 def state_event_type(previous, current):
-    if current == "PRINTING" and previous != "PRINTING":
+    if current == "PRINTING" and previous in {"IDLE", "DONE", "PAUSED"}:
         return "job.started"
     if current == "IDLE" and previous == "PRINTING":
         return "job.completed"
