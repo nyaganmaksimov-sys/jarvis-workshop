@@ -1,15 +1,25 @@
 from collections import deque
 from datetime import datetime, timezone
 from typing import Any, Literal
+import os
+import sys
+from pathlib import Path
 
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, Field
 
-app = FastAPI(title="Jarvis Workshop API", version="0.1.0")
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from core.orchestrator import JarvisCore
+
+app = FastAPI(title="Jarvis Workshop API", version="0.2.0")
+jarvis = JarvisCore()
 
 EVENTS = deque(maxlen=2000)
 DEVICE_STATE: dict[str, dict[str, Any]] = {}
-API_KEY = "change-me"
+API_KEY = os.getenv("JARVIS_API_KEY", "change-me")
 
 
 class Event(BaseModel):
@@ -22,6 +32,10 @@ class Event(BaseModel):
     data: dict[str, Any] = Field(default_factory=dict)
 
 
+class AssistantRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+
+
 def authorize(authorization: str | None):
     if API_KEY == "":
         return
@@ -29,9 +43,23 @@ def authorize(authorization: str | None):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
+def workshop_snapshot() -> dict[str, Any]:
+    alerts = [x for x in EVENTS if x.get("severity") in {"warning", "critical"}][:20]
+    return {
+        "devices": list(DEVICE_STATE.values()),
+        "alerts": alerts,
+        "captured_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 @app.get("/health")
 def health():
-    return {"ok": True, "service": "jarvis-workshop", "time": datetime.now(timezone.utc).isoformat()}
+    return {
+        "ok": True,
+        "service": "jarvis-workshop",
+        "version": "0.2.0",
+        "time": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 @app.post("/api/v1/events")
@@ -50,6 +78,7 @@ def ingest_event(event: Event, authorization: str | None = Header(default=None))
             "last_event": event.type,
             "severity": event.severity,
             "message": event.message,
+            "data": event.data,
         })
         if event.type == "device.online":
             state["status"] = "ONLINE"
@@ -84,3 +113,14 @@ def get_device(device_id: str):
     if not item:
         raise HTTPException(status_code=404, detail="Device not found")
     return item
+
+
+@app.get("/api/v1/workshop/status")
+def get_workshop_status():
+    return workshop_snapshot()
+
+
+@app.post("/api/v1/assistant/query")
+async def assistant_query(request: AssistantRequest, authorization: str | None = Header(default=None)):
+    authorize(authorization)
+    return await jarvis.handle(request.text, workshop_snapshot())
