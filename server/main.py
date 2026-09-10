@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from fastapi import FastAPI, Header, HTTPException
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -17,11 +17,13 @@ if str(ROOT) not in sys.path:
 from core.orchestrator import JarvisCore
 from core.hub_source import HubSource
 from core.announcer import AnnouncementQueue
+from core.tts import NeuralTTS
 
-app = FastAPI(title="Jarvis Workshop API", version="0.5.0")
+app = FastAPI(title="Jarvis Workshop API", version="0.6.0")
 jarvis = JarvisCore()
 hub = HubSource()
 announcer = AnnouncementQueue(hub)
+tts = NeuralTTS()
 
 EVENTS = deque(maxlen=2000)
 DEVICE_STATE: dict[str, dict[str, Any]] = {}
@@ -40,6 +42,11 @@ class Event(BaseModel):
 
 class AssistantRequest(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
+
+
+class TTSRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=2500)
+    voice: Literal["female", "male"] = "female"
 
 
 class AckRequest(BaseModel):
@@ -82,8 +89,9 @@ def health():
     return {
         "ok": True,
         "service": "jarvis-workshop",
-        "version": "0.5.0",
+        "version": "0.6.0",
         "hub_configured": hub.configured,
+        "tts_profiles": tts.profiles(),
         "time": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -169,8 +177,27 @@ def ack_announcement(request: AckRequest, authorization: str | None = Header(def
 @app.post("/api/v1/assistant/query")
 async def assistant_query(request: AssistantRequest, authorization: str | None = Header(default=None)):
     authorize(authorization)
-    hub_state = await hub.snapshot()
+    try:
+        hub_state = await hub.snapshot()
+    except Exception:
+        hub_state = {"configured": False, "error": "HUB_SNAPSHOT_UNAVAILABLE"}
     return await jarvis.handle(request.text, workshop_snapshot(), hub_state)
+
+
+@app.get("/api/v1/tts/voices")
+def tts_voices(authorization: str | None = Header(default=None)):
+    authorize(authorization)
+    return {"voices": tts.profiles()}
+
+
+@app.post("/api/v1/tts")
+async def synthesize_tts(request: TTSRequest, authorization: str | None = Header(default=None)):
+    authorize(authorization)
+    try:
+        audio = await tts.synthesize(request.text, request.voice)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"TTS_UNAVAILABLE: {type(exc).__name__}") from exc
+    return Response(content=audio, media_type="audio/mpeg", headers={"Cache-Control": "no-store"})
 
 
 DASHBOARD_DIR = ROOT / "dashboard"
