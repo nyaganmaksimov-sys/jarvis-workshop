@@ -15,9 +15,11 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from core.orchestrator import JarvisCore
+from core.hub_source import HubSource
 
-app = FastAPI(title="Jarvis Workshop API", version="0.3.0")
+app = FastAPI(title="Jarvis Workshop API", version="0.4.0")
 jarvis = JarvisCore()
+hub = HubSource()
 
 EVENTS = deque(maxlen=2000)
 DEVICE_STATE: dict[str, dict[str, Any]] = {}
@@ -64,7 +66,8 @@ def health():
     return {
         "ok": True,
         "service": "jarvis-workshop",
-        "version": "0.3.0",
+        "version": "0.4.0",
+        "hub_configured": hub.configured,
         "time": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -129,10 +132,17 @@ def get_workshop_status():
     return workshop_snapshot()
 
 
+@app.get("/api/v1/hub/status")
+async def get_hub_status(authorization: str | None = Header(default=None)):
+    authorize(authorization)
+    return await hub.snapshot()
+
+
 @app.post("/api/v1/assistant/query")
 async def assistant_query(request: AssistantRequest, authorization: str | None = Header(default=None)):
     authorize(authorization)
-    return await jarvis.handle(request.text, workshop_snapshot())
+    hub_state = await hub.snapshot()
+    return await jarvis.handle(request.text, workshop_snapshot(), hub_state)
 
 
 DASHBOARD_DIR = ROOT / "dashboard"
