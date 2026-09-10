@@ -3,13 +3,11 @@ from __future__ import annotations
 from typing import Any
 
 from .brain import JarvisBrain
-from .memory import JarvisMemory
 
 
 class JarvisCore:
     def __init__(self) -> None:
         self.brain = JarvisBrain()
-        self.memory = JarvisMemory()
 
     def _money(self, value: Any) -> str:
         try:
@@ -80,12 +78,15 @@ class JarvisCore:
         text: str,
         workshop_state: dict[str, Any] | None = None,
         hub_state: dict[str, Any] | None = None,
+        external_context: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        self.memory.add("user", text)
-        history = [item.__dict__ for item in self.memory.recent(10)]
-        context = {"workshop": workshop_state or {}, "hub": hub_state or {}, "history": history}
+        context: dict[str, Any] = {
+            "workshop": workshop_state or {},
+            "hub": hub_state or {},
+        }
+        if external_context:
+            context.update(external_context)
         reply = await self.brain.answer(text, context)
         rendered = self._render_intent(reply.intent, hub_state or {}, workshop_state or {})
         final_text = rendered or reply.text
-        self.memory.add("assistant", final_text, {"intent": reply.intent})
         return {"text": final_text, "intent": reply.intent, "data": reply.data or {}}
