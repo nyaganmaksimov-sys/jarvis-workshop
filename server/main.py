@@ -19,7 +19,7 @@ from core.hub_source import HubSource
 from core.announcer import AnnouncementQueue
 from core.tts import NeuralTTS
 
-app = FastAPI(title="Jarvis Workshop API", version="0.8.0")
+app = FastAPI(title="Jarvis Workshop API", version="0.9.0")
 jarvis = JarvisCore()
 hub = HubSource()
 announcer = AnnouncementQueue(hub)
@@ -43,11 +43,12 @@ class Event(BaseModel):
 
 class AssistantRequest(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
+    context: dict[str, Any] = Field(default_factory=dict)
 
 
 class TTSRequest(BaseModel):
     text: str = Field(min_length=1, max_length=2500)
-    voice: Literal["female", "male"] = "female"
+    voice: Literal["female", "male"] = "male"
 
 
 class AckRequest(BaseModel):
@@ -131,9 +132,10 @@ def health():
     return {
         "ok": True,
         "service": "jarvis-workshop",
-        "version": "0.8.0",
+        "version": "0.9.0",
         "hub_configured": hub.configured,
         "tts_profiles": tts.profiles(),
+        "llm": jarvis.brain.status(),
         "device_count": len(DEVICE_STATE),
         "heartbeat_stale_seconds": DEVICE_STALE_SECONDS,
         "time": datetime.now(timezone.utc).isoformat(),
@@ -230,7 +232,7 @@ async def assistant_query(request: AssistantRequest, authorization: str | None =
         hub_state = await hub.snapshot()
     except Exception:
         hub_state = {"configured": False, "error": "HUB_SNAPSHOT_UNAVAILABLE"}
-    return await jarvis.handle(request.text, workshop_snapshot(), hub_state)
+    return await jarvis.handle(request.text, workshop_snapshot(), hub_state, request.context)
 
 
 @app.get("/api/v1/tts/voices")
