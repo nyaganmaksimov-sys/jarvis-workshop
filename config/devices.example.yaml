@@ -1,0 +1,31 @@
+site:
+  id: a4print-workshop
+  name: A4Print Workshop
+
+server:
+  base_url: http://server:8080
+  api_key: change-me
+
+cameras:
+  - id: cam-flashforge-ad5x-01
+    name: FlashForge AD5X camera
+    type: rtsp
+    url: rtsp://user:password@192.168.1.50:554/stream1
+    analyze_fps: 1
+    device_id: flashforge-ad5x-01
+    zones:
+      - id: print_bed
+        purpose: work_area
+      - id: display
+        purpose: status_display
+
+devices:
+  - id: flashforge-ad5x-01
+    name: FlashForge AD5X #1
+    kind: 3d_printer
+    business_unit: 3D_ARTPRINT
+    camera_ids:
+      - cam-flashforge-ad5x-01
+    capabilities:
+      observe: true
+      control: false
