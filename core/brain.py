@@ -16,11 +16,7 @@ class BrainReply:
 
 
 class JarvisBrain:
-    """Local-first reasoning layer.
-
-    Uses Ollama when available. Falls back to deterministic workshop commands so
-    basic operation does not depend on an LLM being online.
-    """
+    """Local-first reasoning layer with deterministic HUB intents."""
 
     def __init__(self) -> None:
         self.ollama_url = os.getenv("OLLAMA_URL", "http://localhost:11434")
@@ -38,6 +34,17 @@ class JarvisBrain:
         if any(x in normalized for x in ("ошибк", "авари", "тревог")):
             return BrainReply("Проверяю активные тревоги оборудования.", "alerts")
 
+        if any(x in normalized for x in ("выручк", "касс", "продаж сегодня", "сколько заработ")):
+            return BrainReply("Проверяю сегодняшнюю выручку HUB.", "revenue_today")
+        if any(x in normalized for x in ("сколько заказ", "заказы в работе", "статус заказ", "готовы к выдаче")):
+            return BrainReply("Проверяю текущие заказы HUB.", "orders_status")
+        if any(x in normalized for x in ("сообщени", "непрочитан", "кто написал", "что написали")):
+            return BrainReply("Проверяю непрочитанные сообщения HUB.", "unread_messages")
+        if any(x in normalized for x in ("производств", "задания в работе", "очередь цеха")):
+            return BrainReply("Проверяю производственную очередь HUB.", "production_summary")
+        if any(x in normalized for x in ("что требует внимания", "что важного", "что нового", "сводка")):
+            return BrainReply("Собираю оперативную сводку HUB.", "attention_summary")
+
         try:
             return await self._ollama(text, context or {})
         except Exception:
@@ -45,9 +52,9 @@ class JarvisBrain:
 
     async def _ollama(self, text: str, context: dict[str, Any]) -> BrainReply:
         system = (
-            "Ты Джарвис — локальный помощник производственного цеха. "
-            "Отвечай кратко по-русски. Не выдумывай состояние станков. "
-            "Если данных нет — прямо скажи об этом."
+            "Ты Джарвис — локальный помощник производственного цеха и A4Print-HUB. "
+            "Отвечай кратко по-русски. Не выдумывай состояние станков, заказы, сообщения или выручку. "
+            "Используй только переданный контекст. Если данных нет — прямо скажи об этом."
         )
         prompt = f"Контекст: {json.dumps(context, ensure_ascii=False)}\nЗапрос: {text}"
         async with httpx.AsyncClient(timeout=30) as client:
