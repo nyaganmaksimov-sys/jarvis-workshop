@@ -16,10 +16,12 @@ if str(ROOT) not in sys.path:
 
 from core.orchestrator import JarvisCore
 from core.hub_source import HubSource
+from core.announcer import AnnouncementQueue
 
-app = FastAPI(title="Jarvis Workshop API", version="0.4.0")
+app = FastAPI(title="Jarvis Workshop API", version="0.5.0")
 jarvis = JarvisCore()
 hub = HubSource()
+announcer = AnnouncementQueue(hub)
 
 EVENTS = deque(maxlen=2000)
 DEVICE_STATE: dict[str, dict[str, Any]] = {}
@@ -40,6 +42,10 @@ class AssistantRequest(BaseModel):
     text: str = Field(min_length=1, max_length=4000)
 
 
+class AckRequest(BaseModel):
+    id: str = Field(min_length=1, max_length=500)
+
+
 def authorize(authorization: str | None):
     if API_KEY == "":
         return
@@ -56,6 +62,16 @@ def workshop_snapshot() -> dict[str, Any]:
     }
 
 
+@app.on_event("startup")
+async def startup_event():
+    announcer.start()
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    await announcer.stop()
+
+
 @app.get("/", include_in_schema=False)
 def root():
     return RedirectResponse(url="/dashboard/")
@@ -66,7 +82,7 @@ def health():
     return {
         "ok": True,
         "service": "jarvis-workshop",
-        "version": "0.4.0",
+        "version": "0.5.0",
         "hub_configured": hub.configured,
         "time": datetime.now(timezone.utc).isoformat(),
     }
@@ -136,6 +152,18 @@ def get_workshop_status():
 async def get_hub_status(authorization: str | None = Header(default=None)):
     authorize(authorization)
     return await hub.snapshot()
+
+
+@app.get("/api/v1/announcements")
+def get_announcements(limit: int = 20, authorization: str | None = Header(default=None)):
+    authorize(authorization)
+    return {"items": announcer.pending(limit)}
+
+
+@app.post("/api/v1/announcements/ack")
+def ack_announcement(request: AckRequest, authorization: str | None = Header(default=None)):
+    authorize(authorization)
+    return {"ok": announcer.ack(request.id)}
 
 
 @app.post("/api/v1/assistant/query")
