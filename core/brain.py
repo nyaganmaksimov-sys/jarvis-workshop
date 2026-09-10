@@ -50,28 +50,30 @@ class JarvisBrain:
         if not normalized:
             return BrainReply("Я вас не расслышал.")
 
-        if any(x in normalized for x in ("как дела в цехе", "что в цехе", "статус цеха")):
-            return BrainReply("Собираю состояние оборудования и последние тревоги.", "workshop_status")
-        if "камер" in normalized and any(x in normalized for x in ("покажи", "открой")):
-            return BrainReply("Открываю камеры цеха.", "show_cameras")
-        if any(x in normalized for x in ("ошибк", "авари", "тревог")):
-            return BrainReply("Проверяю активные тревоги оборудования.", "alerts")
-
-        if any(x in normalized for x in ("выручк", "касс", "продаж сегодня", "сколько заработ")):
-            return BrainReply("Проверяю сегодняшнюю выручку HUB.", "revenue_today")
-        if any(x in normalized for x in ("сколько заказ", "заказы в работе", "статус заказ", "готовы к выдаче")):
-            return BrainReply("Проверяю текущие заказы HUB.", "orders_status")
-        if any(x in normalized for x in ("сообщени", "непрочитан", "кто написал", "что написали")):
-            return BrainReply("Проверяю непрочитанные сообщения HUB.", "unread_messages")
-        if any(x in normalized for x in ("производств", "задания в работе", "очередь цеха")):
-            return BrainReply("Проверяю производственную очередь HUB.", "production_summary")
-        if any(x in normalized for x in ("что требует внимания", "что важного", "что нового", "сводка")):
-            return BrainReply("Собираю оперативную сводку HUB.", "attention_summary")
-
         ctx = context or {}
+        force_model = str(ctx.get("task") or "") == "message_draft"
+
+        if not force_model:
+            if any(x in normalized for x in ("как дела в цехе", "что в цехе", "статус цеха")):
+                return BrainReply("Собираю состояние оборудования и последние тревоги.", "workshop_status")
+            if "камер" in normalized and any(x in normalized for x in ("покажи", "открой")):
+                return BrainReply("Открываю камеры цеха.", "show_cameras")
+            if any(x in normalized for x in ("ошибк", "авари", "тревог")):
+                return BrainReply("Проверяю активные тревоги оборудования.", "alerts")
+
+            if any(x in normalized for x in ("выручк", "касс", "продаж сегодня", "сколько заработ")):
+                return BrainReply("Проверяю сегодняшнюю выручку HUB.", "revenue_today")
+            if any(x in normalized for x in ("сколько заказ", "заказы в работе", "статус заказ", "готовы к выдаче")):
+                return BrainReply("Проверяю текущие заказы HUB.", "orders_status")
+            if any(x in normalized for x in ("сообщени", "непрочитан", "кто написал", "что написали")):
+                return BrainReply("Проверяю непрочитанные сообщения HUB.", "unread_messages")
+            if any(x in normalized for x in ("производств", "задания в работе", "очередь цеха")):
+                return BrainReply("Проверяю производственную очередь HUB.", "production_summary")
+            if any(x in normalized for x in ("что требует внимания", "что важного", "что нового", "сводка")):
+                return BrainReply("Собираю оперативную сводку HUB.", "attention_summary")
+
         errors: list[str] = []
-        providers = self._provider_order()
-        for provider in providers:
+        for provider in self._provider_order():
             try:
                 if provider == "openai":
                     return await self._openai(text, ctx)
@@ -105,8 +107,7 @@ class JarvisBrain:
             2: "Можно умеренно шутить и использовать короткие остроумные реплики, не мешая делу.",
             3: "Юмор заметный и живой, но ответ всё равно должен оставаться полезным и профессиональным.",
         }.get(max(0, min(humor_level, 3)), "")
-        serious = bool(personality.get("serious_mode"))
-        if serious:
+        if bool(personality.get("serious_mode")):
             humor = "Никакого юмора: запрос относится к деньгам, кассе, ошибке, безопасности или критическому событию."
 
         memories = context.get("jarvis_memories") or []
