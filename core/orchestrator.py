@@ -15,6 +15,21 @@ class JarvisCore:
         except Exception:
             return "0 рублей"
 
+    def _incident_summary(self, hub: dict[str, Any]) -> str:
+        incidents = hub.get("incidents") or {}
+        total = int(incidents.get("total") or 0)
+        critical = int(incidents.get("critical") or 0)
+        warning = int(incidents.get("warning") or 0)
+        items = incidents.get("items") or []
+        if total <= 0:
+            return "Sentinel активных проблем не обнаружил."
+        top = items[0] if items else {}
+        top_title = str(top.get("title") or "").strip()
+        text = f"Sentinel: активных проблем {total}, критических {critical}, предупреждений {warning}."
+        if top_title:
+            text += f" Самая важная: {top_title}."
+        return text
+
     def _render_intent(self, intent: str, hub: dict[str, Any], workshop: dict[str, Any]) -> str | None:
         if intent == "revenue_today":
             r = hub.get("revenue") or {}
@@ -61,16 +76,21 @@ class JarvisCore:
             return (
                 f"Сводка: выручка {self._money(r.get('net'))}; новых заказов {int(o.get('new') or 0)}; "
                 f"в работе {int(o.get('in_progress') or 0)}; непрочитанных сообщений {int(m.get('unread') or 0)}; "
-                f"производственных заданий в работе {int(p.get('in_progress') or 0)}."
+                f"производственных заданий в работе {int(p.get('in_progress') or 0)}. "
+                f"{self._incident_summary(hub)}"
             )
         if intent == "workshop_status":
             devices = workshop.get("devices") or []
             alerts = workshop.get("alerts") or []
             if not devices:
-                return "Оборудование пока не передаёт данные."
+                incidents_text = self._incident_summary(hub)
+                return f"Оборудование пока не передаёт данные. {incidents_text}"
             active = sum(1 for x in devices if x.get("status") in {"PRINTING", "ONLINE", "IN_PROGRESS"})
             errors = sum(1 for x in devices if x.get("status") in {"ERROR", "OFFLINE"})
-            return f"Устройств видно {len(devices)}. Активных {active}, с ошибкой или офлайн {errors}. Тревог {len(alerts)}."
+            return (
+                f"Устройств видно {len(devices)}. Активных {active}, с ошибкой или офлайн {errors}. "
+                f"Тревог оборудования {len(alerts)}. {self._incident_summary(hub)}"
+            )
         return None
 
     async def handle(
