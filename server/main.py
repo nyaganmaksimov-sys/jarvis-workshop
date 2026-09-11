@@ -1,10 +1,12 @@
 from collections import deque
 from datetime import datetime, timezone
 from typing import Any, Literal
+import asyncio
 import os
 import sys
 from pathlib import Path
 
+import httpx
 from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -19,7 +21,7 @@ from core.hub_source import HubSource
 from core.announcer import AnnouncementQueue
 from core.tts import NeuralTTS
 
-app = FastAPI(title="Jarvis Workshop API", version="0.10.0")
+app = FastAPI(title="Jarvis Workshop API", version="0.10.1")
 jarvis = JarvisCore()
 hub = HubSource()
 announcer = AnnouncementQueue(hub)
@@ -29,6 +31,15 @@ EVENTS = deque(maxlen=2000)
 DEVICE_STATE: dict[str, dict[str, Any]] = {}
 API_KEY = os.getenv("JARVIS_API_KEY", "change-me")
 DEVICE_STALE_SECONDS = max(30, int(os.getenv("JARVIS_DEVICE_STALE_SECONDS", "150")))
+LLM_PROBE: dict[str, Any] = {
+    "checked": False,
+    "ok": False,
+    "status_code": None,
+    "error_code": None,
+    "error_type": None,
+    "message": None,
+    "checked_at": None,
+}
 
 
 class Event(BaseModel):
@@ -112,10 +123,66 @@ def workshop_snapshot() -> dict[str, Any]:
     }
 
 
+async def probe_openai() -> None:
+    """Verify that the configured OpenAI key can actually execute a model call.
+
+    Only sanitized status/error metadata is retained and logged. The API key and
+    request/response content are never emitted.
+    """
+    status = jarvis.brain.status()
+    LLM_PROBE.update({
+        "checked": True,
+        "ok": False,
+        "status_code": None,
+        "error_code": None,
+        "error_type": None,
+        "message": None,
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+    })
+    if not status.get("openai_configured"):
+        LLM_PROBE.update({"error_code": "OPENAI_API_KEY_MISSING", "error_type": "configuration"})
+        print(f"[Jarvis LLM Probe] {LLM_PROBE}", flush=True)
+        return
+
+    payload = {
+        "model": status.get("openai_model") or "gpt-5.6-luna",
+        "input": "Reply with OK.",
+        "reasoning": {"effort": "none"},
+        "max_output_tokens": 32,
+    }
+    headers = {
+        "Authorization": f"Bearer {jarvis.brain.openai_key}",
+        "Content-Type": "application/json",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            response = await client.post(jarvis.brain.openai_url, headers=headers, json=payload)
+        LLM_PROBE["status_code"] = response.status_code
+        if 200 <= response.status_code < 300:
+            LLM_PROBE["ok"] = True
+        else:
+            try:
+                body = response.json()
+            except Exception:
+                body = {}
+            error = body.get("error") if isinstance(body, dict) else {}
+            if not isinstance(error, dict):
+                error = {}
+            LLM_PROBE["error_code"] = str(error.get("code") or "HTTP_ERROR")[:120]
+            LLM_PROBE["error_type"] = str(error.get("type") or "http_error")[:120]
+            LLM_PROBE["message"] = str(error.get("message") or "OpenAI request failed")[:300]
+    except Exception as exc:
+        LLM_PROBE["error_code"] = type(exc).__name__
+        LLM_PROBE["error_type"] = "network_error"
+        LLM_PROBE["message"] = str(exc)[:300]
+    print(f"[Jarvis LLM Probe] {LLM_PROBE}", flush=True)
+
+
 @app.on_event("startup")
 async def startup_event():
     print(f"[Jarvis LLM] {jarvis.brain.status()}", flush=True)
     announcer.start()
+    asyncio.create_task(probe_openai())
 
 
 @app.on_event("shutdown")
@@ -133,10 +200,11 @@ def health():
     return {
         "ok": True,
         "service": "jarvis-workshop",
-        "version": "0.10.0",
+        "version": "0.10.1",
         "hub_configured": hub.configured,
         "tts_profiles": tts.profiles(),
         "llm": jarvis.brain.status(),
+        "llm_probe": dict(LLM_PROBE),
         "device_count": len(DEVICE_STATE),
         "heartbeat_stale_seconds": DEVICE_STALE_SECONDS,
         "time": datetime.now(timezone.utc).isoformat(),
