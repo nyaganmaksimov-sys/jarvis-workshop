@@ -48,6 +48,29 @@ class AnnouncementQueue:
             await asyncio.sleep(self.poll_seconds)
 
     def _collect(self, snapshot: dict[str, Any]) -> None:
+        incidents = (snapshot.get("incidents") or {}).get("items") or []
+        for incident in reversed(incidents):
+            incident_id = str(incident.get("id") or "").strip()
+            severity = str(incident.get("severity") or "warning").lower()
+            title = str(incident.get("title") or "Событие Sentinel").strip()
+            message = str(incident.get("message") or "").strip()
+            fingerprint = f"sentinel:{incident_id}:{severity}"
+            if not incident_id or fingerprint in self.seen:
+                continue
+            self.seen.add(fingerprint)
+            prefix = "Внимание. " if severity == "critical" else ""
+            text = f"{prefix}{title}. {message}".strip()
+            self.items.appendleft({
+                "id": fingerprint,
+                "type": "sentinel",
+                "priority": "high" if severity == "critical" else "normal",
+                "severity": severity,
+                "text": text[:620],
+                "route": incident.get("route"),
+                "incident_id": incident_id,
+                "created_at": incident.get("created_at") or datetime.now(timezone.utc).isoformat(),
+            })
+
         for msg in (snapshot.get("messages") or {}).get("latest") or []:
             fingerprint = f"chat:{msg.get('created_at')}:{msg.get('message')}"
             if fingerprint in self.seen:
