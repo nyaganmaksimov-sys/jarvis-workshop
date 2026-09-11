@@ -19,7 +19,7 @@ from core.hub_source import HubSource
 from core.announcer import AnnouncementQueue
 from core.tts import NeuralTTS
 
-app = FastAPI(title="Jarvis Workshop API", version="0.9.0")
+app = FastAPI(title="Jarvis Workshop API", version="0.10.0")
 jarvis = JarvisCore()
 hub = HubSource()
 announcer = AnnouncementQueue(hub)
@@ -114,6 +114,7 @@ def workshop_snapshot() -> dict[str, Any]:
 
 @app.on_event("startup")
 async def startup_event():
+    print(f"[Jarvis LLM] {jarvis.brain.status()}", flush=True)
     announcer.start()
 
 
@@ -132,7 +133,7 @@ def health():
     return {
         "ok": True,
         "service": "jarvis-workshop",
-        "version": "0.9.0",
+        "version": "0.10.0",
         "hub_configured": hub.configured,
         "tts_profiles": tts.profiles(),
         "llm": jarvis.brain.status(),
